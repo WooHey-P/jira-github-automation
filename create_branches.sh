@@ -78,12 +78,44 @@ if [[ ! "$FEATURE_KEY" =~ ^[A-Za-z]+-[0-9]+$ ]]; then
 fi
 
 echo "┌──────────────────────────────────────────────┐"
-read -p "│ 📝 간단한 설명 입력 (예: email-check): " DESC
+read -p "│ 📝 간단한 설명 입력 (예: email check): " DESC_INPUT
 echo "└──────────────────────────────────────────────┘"
-if [[ ! "$DESC" =~ ^[a-z0-9-]+$ ]]; then
-  echo "❌ 설명은 영문 소문자, 숫자, 하이픈만 허용됩니다."
+
+# 원본 보존
+ORIGINAL_DESC="$DESC_INPUT"
+
+# 1. 띄어쓰기를 하이픈으로 변환
+DESC=$(echo "$DESC_INPUT" | tr ' ' '-')
+
+# 2. 소문자로 변환
+DESC=$(echo "$DESC" | tr '[:upper:]' '[:lower:]')
+
+# 3. 연속된 하이픈 제거 (예: "hello  world" -> "hello--world" -> "hello-world")
+DESC=$(echo "$DESC" | sed 's/--*/-/g')
+
+# 4. 앞뒤 하이픈 제거
+DESC=$(echo "$DESC" | sed 's/^-\|-$//g')
+
+# 변환 과정 표시
+if [[ "$ORIGINAL_DESC" != "$DESC" ]]; then
+  echo "🔄 자동 변환됨: '$ORIGINAL_DESC' → '$DESC'"
+fi
+
+# 빈 문자열 검사
+if [[ -z "$DESC" ]]; then
+  echo "❌ 설명이 비어있습니다."
   exit 1
 fi
+
+# 유효성 검사
+if [[ ! "$DESC" =~ ^[a-z0-9-]+$ ]]; then
+  echo "❌ 설명에 허용되지 않는 문자가 포함되어 있습니다."
+  echo "   허용: 영문, 숫자, 하이픈(-)"
+  echo "   변환된 값: $DESC"
+  exit 1
+fi
+
+echo "✅ 최종 설명: $DESC"
 
 echo "┌──────────────────────────────────────────────┐"
 read -p "│ 🔧 생성할 버전 입력 (형식: x.y.z): " VERSION
