@@ -35,7 +35,7 @@ if [ "$IS_HOTFIX" = true ]; then
 
   BRANCH_NAME="${HOTFIX_BRANCH_PREFIX}${ISSUE_KEY}"
   echo ""
-  echo "📋 생성될 브랜치: $BRANCH_NAME (base: origin/master)"
+  echo "📋 생성될 브랜치: $BRANCH_NAME (base: origin/main)"
   read -p "✅ 위 브랜치를 생성하시겠습니까? (y/n): " CONFIRM
   if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
     echo "🚫 작업이 취소되었습니다."
@@ -49,7 +49,7 @@ if [ "$IS_HOTFIX" = true ]; then
     exit 0
   fi
 
-  git checkout origin/master || exit 1
+  git checkout origin/main || exit 1
   git checkout -b "$BRANCH_NAME" || exit 1
   git push -u origin "$BRANCH_NAME"
 
@@ -99,7 +99,7 @@ FEATURE_BRANCH="${FEATURE_BRANCH_PREFIX}$VERSION/$STORY_KEY/feature/$FEATURE_KEY
 
 echo ""
 echo "📋 생성될 브랜치 목록:"
-echo "   🔹 $RELEASE_BRANCH (base: origin/master)"
+echo "   🔹 $RELEASE_BRANCH (base: origin/main)"
 echo "   🔹 $DEVELOP_BRANCH (base: $RELEASE_BRANCH)"
 echo "   🔹 $FEATURE_BRANCH (base: $RELEASE_BRANCH)"
 echo ""
@@ -117,7 +117,7 @@ if git ls-remote --exit-code --heads origin "$RELEASE_BRANCH" > /dev/null; then
   echo "🔄 $RELEASE_BRANCH 이미 존재. 건너뜁니다."
 else
   echo "🌱 $RELEASE_BRANCH 생성 중..."
-  git checkout origin/master || exit 1
+  git checkout origin/main || exit 1
   git checkout -b "$RELEASE_BRANCH" || exit 1
   git push -u origin "$RELEASE_BRANCH"
 fi
