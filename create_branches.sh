@@ -22,6 +22,38 @@ else
   exit 1
 fi
 
+# base branch 선택 추가
+prompt_base_branch() {
+  echo ""
+  echo "┌──────────────────────────────────────────────┐"
+  echo "│ 생성 기준이 될 base branch를 선택하세요:"
+  echo "│ 1) main (기본)"
+  echo "│ 2) master"
+  echo "│ 3) 직접 입력 (영문자+숫자만 허용)"
+  echo "└──────────────────────────────────────────────┘"
+  read -p "👉 번호 입력 (1,2 또는 3): " BASE_CHOICE
+
+  if [[ -z "$BASE_CHOICE" || "$BASE_CHOICE" == "1" ]]; then
+    BASE_BRANCH="main"
+  elif [[ "$BASE_CHOICE" == "2" ]]; then
+    BASE_BRANCH="master"
+  elif [[ "$BASE_CHOICE" == "3" ]]; then
+    read -p "🔤 직접 입력 (영문자+숫자만): " CUSTOM_BASE
+    if [[ ! "$CUSTOM_BASE" =~ ^[A-Za-z0-9]+$ ]]; then
+      echo "❌ 브랜치 이름은 영문자와 숫자만 허용됩니다."
+      exit 1
+    fi
+    BASE_BRANCH="$CUSTOM_BASE"
+  else
+    echo "❌ 잘못된 입력입니다. 1, 2 또는 3 중 하나를 입력하세요."
+    exit 1
+  fi
+  echo "✅ 선택된 base branch: origin/$BASE_BRANCH"
+}
+
+# base branch 선택 실행
+prompt_base_branch
+
 # ✅ 핫픽스 분기
 if [ "$IS_HOTFIX" = true ]; then
   echo ""
@@ -35,7 +67,7 @@ if [ "$IS_HOTFIX" = true ]; then
 
   BRANCH_NAME="${HOTFIX_BRANCH_PREFIX}${ISSUE_KEY}"
   echo ""
-  echo "📋 생성될 브랜치: $BRANCH_NAME (base: origin/main)"
+  echo "📋 생성될 브랜치: $BRANCH_NAME (base: origin/$BASE_BRANCH)"
   read -p "✅ 위 브랜치를 생성하시겠습니까? (y/n): " CONFIRM
   if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
     echo "🚫 작업이 취소되었습니다."
@@ -49,7 +81,7 @@ if [ "$IS_HOTFIX" = true ]; then
     exit 0
   fi
 
-  git checkout origin/main || exit 1
+  git checkout origin/"$BASE_BRANCH" || exit 1
   git checkout -b "$BRANCH_NAME" || exit 1
   git push -u origin "$BRANCH_NAME"
 
@@ -131,7 +163,7 @@ FEATURE_BRANCH="${FEATURE_BRANCH_PREFIX}$VERSION/$STORY_KEY/feature/$FEATURE_KEY
 
 echo ""
 echo "📋 생성될 브랜치 목록:"
-echo "   🔹 $RELEASE_BRANCH (base: origin/main)"
+echo "   🔹 $RELEASE_BRANCH (base: origin/$BASE_BRANCH)"
 echo "   🔹 $DEVELOP_BRANCH (base: $RELEASE_BRANCH)"
 echo "   🔹 $FEATURE_BRANCH (base: $RELEASE_BRANCH)"
 echo ""
@@ -149,7 +181,7 @@ if git ls-remote --exit-code --heads origin "$RELEASE_BRANCH" > /dev/null; then
   echo "🔄 $RELEASE_BRANCH 이미 존재. 건너뜁니다."
 else
   echo "🌱 $RELEASE_BRANCH 생성 중..."
-  git checkout origin/main || exit 1
+  git checkout origin/"$BASE_BRANCH" || exit 1
   git checkout -b "$RELEASE_BRANCH" || exit 1
   git push -u origin "$RELEASE_BRANCH"
 fi
