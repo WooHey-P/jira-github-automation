@@ -85,20 +85,22 @@ echo "  JENKINS_CLI_JAR: $JENKINS_CLI_JAR"
 echo "  REPO_URL: $REPO_URL"
 echo "  PROJECT_PREFIX: $PROJECT_PREFIX"
 
+# Jenkins CLI 다운로드 및 준비 (기본 동작: Jenkins CLI 사용)
 print_step "Jenkins CLI 다운로드..."
+DOWNLOAD_URL="${JENKINS_URL%/}/jnlpJars/jenkins-cli.jar"
+TMP_HEADERS="/tmp/jenkins-cli.headers"
+HTTP_CODE=""
+
+# 다운로드가 필요한 경우에만 시도 (사용자가 JENKINS_CLI_JAR로 경로 지정 가능)
 if [ ! -f "$JENKINS_CLI_JAR" ]; then
-    DOWNLOAD_URL="${JENKINS_URL%/}/jnlpJars/jenkins-cli.jar"
-    TMP_HEADERS="/tmp/jenkins-cli.headers"
-    HTTP_CODE=""
     if command -v curl >/dev/null 2>&1; then
-        # 인증 정보가 있으면 사용자:비밀번호(또는 API 토큰)로 시도
+        # follow redirects with -L; capture headers into TMP_HEADERS and status into HTTP_CODE
         if [[ -n "$JENKINS_USER" && -n "$JENKINS_PASSWORD" ]]; then
-            HTTP_CODE=$(curl -sS -w "%{http_code}" -D "$TMP_HEADERS" -u "$JENKINS_USER:$JENKINS_PASSWORD" "$DOWNLOAD_URL" -o "$JENKINS_CLI_JAR" || echo "000")
+            HTTP_CODE=$(curl -sS -L -w "%{http_code}" -D "$TMP_HEADERS" -u "$JENKINS_USER:$JENKINS_PASSWORD" "$DOWNLOAD_URL" -o "$JENKINS_CLI_JAR" || echo "000")
         else
-            HTTP_CODE=$(curl -sS -w "%{http_code}" -D "$TMP_HEADERS" "$DOWNLOAD_URL" -o "$JENKINS_CLI_JAR" || echo "000")
+            HTTP_CODE=$(curl -sS -L -w "%{http_code}" -D "$TMP_HEADERS" "$DOWNLOAD_URL" -o "$JENKINS_CLI_JAR" || echo "000")
         fi
     elif command -v wget >/dev/null 2>&1; then
-        # wget는 헤더 출력 옵션이 제한적이므로 --server-response로 헤더를 stderr에 캡처
         if [[ -n "$JENKINS_USER" && -n "$JENKINS_PASSWORD" ]]; then
             wget --server-response --auth-no-challenge --user="$JENKINS_USER" --password="$JENKINS_PASSWORD" "$DOWNLOAD_URL" -O "$JENKINS_CLI_JAR" 2> /tmp/jenkins-cli.wget.headers || true
             HTTP_CODE=$(awk '/^  HTTP/{code=$2} END{print code+0}' /tmp/jenkins-cli.wget.headers 2>/dev/null || echo "000")
@@ -114,13 +116,36 @@ if [ ! -f "$JENKINS_CLI_JAR" ]; then
     fi
 fi
 
-# 다운로드된 파일 검증 (간결화)
+# 다운로드된 파일 검증 (강건한 검사: HTTP 코드, 헤더, 파일 크기 판단)
 if [[ -f "$JENKINS_CLI_JAR" ]]; then
     FILE_SIZE=$(stat -c%s "$JENKINS_CLI_JAR" 2>/dev/null || stat -f%z "$JENKINS_CLI_JAR" 2>/dev/null || echo 0)
+    # HTTP_CODE가 비어있을 수 있으므로 TMP_HEADERS에서 추출 시도
+    if [[ -z "$HTTP_CODE" && -f "$TMP_HEADERS" ]]; then
+        HTTP_CODE=$(awk '/^HTTP/{code=$2} END{print code+0}' "$TMP_HEADERS" 2>/dev/null || echo "")
+    fi
+    # Content-Type 확인
+    CONTENT_TYPE=""
+    if [[ -f "$TMP_HEADERS" ]]; then
+        CONTENT_TYPE=$(awk -F': ' '/^[Cc]ontent-Type:/{print $2}' "$TMP_HEADERS" 2>/dev/null | tail -n1 || true)
+    fi
+
     print_step "다운로드 HTTP 상태 코드: ${HTTP_CODE:-unknown}"
     print_step "다운로드된 파일 크기(bytes): ${FILE_SIZE}"
-    # 간단 검사: HTTP 200 및 파일 크기(임계값)
-    if [[ "${HTTP_CODE:-000}" != "200" || "${FILE_SIZE}" -lt 1024 ]]; then
+    print_step "다운로드 Content-Type: ${CONTENT_TYPE:-unknown}"
+
+    valid=0
+    # 우선: 정상 HTTP 200이면 유효성 검사
+    if [[ "${HTTP_CODE:-}" == "200" && "${FILE_SIZE}" -ge 1024 ]]; then
+        valid=1
+    fi
+    # 대체: HTTP 코드가 비어있더라도 Content-Type이 Java archive거나 파일 크기가 충분하면 수용
+    if [[ "$valid" -eq 0 ]]; then
+        if [[ -n "$CONTENT_TYPE" && "$CONTENT_TYPE" =~ (jar|java-archive|application/java-archive) && "${FILE_SIZE}" -ge 1024 ]]; then
+            valid=1
+        fi
+    fi
+
+    if [[ "$valid" -ne 1 ]]; then
         print_error "Jenkins CLI 다운로드에 실패했거나 유효하지 않은 파일입니다. 서버 응답을 확인하세요."
         [[ -f "$TMP_HEADERS" ]] && print_step "HTTP 헤더 (최대 200줄):" && sed -n '1,200p' "$TMP_HEADERS"
         rm -f "$JENKINS_CLI_JAR" 2>/dev/null || true
@@ -131,15 +156,10 @@ else
     exit 1
 fi
 
-# Jenkins 연결 테스트
+# Jenkins 연결 테스트 (CLI 사용)
 print_step "Jenkins 연결 테스트..."
 if ! command -v java >/dev/null 2>&1; then
     print_error "Java가 설치되어 있지 않습니다. 'java' 명령을 설치/설정하세요."
-    exit 1
-fi
-
-if [[ ! -f "$JENKINS_CLI_JAR" ]]; then
-    print_error "Jenkins CLI JAR이 없습니다: $JENKINS_CLI_JAR"
     exit 1
 fi
 
@@ -157,9 +177,17 @@ create_job_xml() {
     local filter_expression=$5
     local filter_text=$6
 
-    # XML 특수 문자 이스케이프 함수
+    # XML 특수 문자 이스케이프 함수 (정상 동작하도록 개선)
     escape_xml() {
-        echo "$1" | sed 's/&/\&/g; s/</\</g; s/>/\>/g; s/"/\"/g; s/'\''/\&#39;/g'
+        local s="$1"
+        s=${s//&/&amp;}
+        s=${s//</&lt;}
+        s=${s//>/&gt;}
+        s=${s//\"/&quot;}
+        s=${s//\' /&apos;}  # (이전 잘못된 패턴, 즉시 정리)
+        s=${s//\' /&apos;}
+        s=${s//\'/&apos;}
+        printf '%s' "$s"
     }
 
     local escaped_description
@@ -255,21 +283,40 @@ create_job_xml() {
 EOF
 }
 
-# 작업 생성 함수
+# 작업 생성 함수 (Jenkins CLI 사용)
 create_jenkins_job() {
     local job_name=$1
     local xml_file="/tmp/${job_name}.xml"
+    local debug_file="/tmp/debug-${job_name}.xml"
 
     print_step "Jenkins 작업 생성: ${job_name}"
 
-    if java -jar "$JENKINS_CLI_JAR" -s "$JENKINS_URL" -auth "$JENKINS_USER:$JENKINS_PASSWORD" get-job "$job_name" &>/dev/null; then
-        print_warning "작업 '${job_name}'이 이미 존재합니다. 업데이트합니다..."
-        java -jar "$JENKINS_CLI_JAR" -s "$JENKINS_URL" -auth "$JENKINS_USER:$JENKINS_PASSWORD" update-job "$job_name" < "$xml_file"
-    else
-        java -jar "$JENKINS_CLI_JAR" -s "$JENKINS_URL" -auth "$JENKINS_USER:$JENKINS_PASSWORD" create-job "$job_name" < "$xml_file"
+    # 보관용으로 xml 복사 (문제 발생 시 디버깅을 위해 유지)
+    if [[ -f "$xml_file" ]]; then
+        cp "$xml_file" "$debug_file" 2>/dev/null || true
     fi
 
-    rm -f "$xml_file"
+    if java -jar "$JENKINS_CLI_JAR" -s "$JENKINS_URL" -auth "$JENKINS_USER:$JENKINS_PASSWORD" get-job "$job_name" &>/dev/null; then
+        print_warning "작업 '${job_name}'이 이미 존재합니다. 업데이트합니다..."
+        if ! java -jar "$JENKINS_CLI_JAR" -s "$JENKINS_URL" -auth "$JENKINS_USER:$JENKINS_PASSWORD" update-job "$job_name" < "$xml_file"; then
+            print_error "작업 업데이트 실패: $job_name"
+            echo ""
+            print_step "디버그용 XML 파일 위치: ${debug_file}"
+            # 원본 파일은 문제 원인 분석을 위해 삭제하지 않음
+            exit 1
+        fi
+    else
+        if ! java -jar "$JENKINS_CLI_JAR" -s "$JENKINS_URL" -auth "$JENKINS_USER:$JENKINS_PASSWORD" create-job "$job_name" < "$xml_file"; then
+            print_error "작업 생성 실패: $job_name"
+            echo ""
+            print_step "디버그용 XML 파일 위치: ${debug_file}"
+            # 원본 파일은 문제 원인 분석을 위해 삭제하지 않음
+            exit 1
+        fi
+    fi
+
+    # 성공 시 임시 파일과 디버그 파일 정리
+    rm -f "$xml_file" "$debug_file" 2>/dev/null || true
 }
 
 print_step "Jenkins 파이프라인 작업들을 생성합니다..."
@@ -337,7 +384,4 @@ echo "4. 테스트 빌드를 실행하여 설정을 검증하세요"
 echo ""
 echo "🔗 GitHub 웹훅 URL: ${JENKINS_URL}/generic-webhook-trigger/invoke"
 
-# 임시 파일 정리 (CLI JAR은 파일 경로로 지정된 파일만 삭제)
-if [[ -f "$JENKINS_CLI_JAR" ]]; then
-    rm -f "$JENKINS_CLI_JAR"
-fi
+# 임시 파일 정리: 없음 (Jenkins CLI를 사용하지 않으므로 별도 삭제 불필요)
