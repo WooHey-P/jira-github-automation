@@ -7,7 +7,8 @@ set -e
 
 # 공통 환경변수 로드
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$script_dir/common.sh"
+REPO_ROOT="$(cd "$script_dir/../.." && pwd)"
+source "$REPO_ROOT/scripts/common/common.sh"
 load_env
 set_defaults
 
@@ -145,7 +146,8 @@ fi
 
 # 템플릿 파일 업데이트
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PR_TEMPLATES_DIR="$SCRIPT_DIR/pr_templates"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PR_TEMPLATES_DIR="$REPO_ROOT/scripts/templates"
 
 echo -e "\n${GREEN}생성된 PR 제목:${NC}"
 echo "$PR_TITLE"

@@ -2,7 +2,8 @@
 
 # 공통 환경변수 로드
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$script_dir/common.sh"
+REPO_ROOT="$(cd "$script_dir/../.." && pwd)"
+source "$REPO_ROOT/scripts/common/common.sh"
 load_env
 set_defaults
 

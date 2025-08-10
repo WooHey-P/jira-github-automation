@@ -1,8 +1,9 @@
 #!/bin/bash
 
-# 템플릿 경로
-TITLE_FILE="scripts/pr_templates/pr_title.txt"
-BODY_FILE="scripts/pr_templates/pr_body.md"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$script_dir/../.." && pwd)"
+TITLE_FILE="$REPO_ROOT/scripts/templates/pr_title.txt"
+BODY_FILE="$REPO_ROOT/scripts/templates/pr_body.md"
 
 if [[ ! -f "$TITLE_FILE" || ! -f "$BODY_FILE" ]]; then
   echo "❌ 템플릿 파일이 존재하지 않습니다. $TITLE_FILE / $BODY_FILE"
