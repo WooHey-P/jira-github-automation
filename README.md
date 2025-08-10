@@ -4,22 +4,22 @@ Jira 이슈 키 기반 브랜치 생성부터 AI 기반 PR 자동화까지, 개�
 
 ## 🚀 주요 기능
 
-### 1. Jira 기반 브랜치 자동 생성 (`create_branches.sh`)
+### 1. Jira 기반 브랜치 자동 생성 (`scripts/branch/*/create_branches.sh`)
 - **정규 배포**: `feature/JIRA-123` 형태의 브랜치 생성
 - **핫픽스**: `fix/JIRA-456` 형태의 브랜치 생성
 - Jira 이슈 키 검증 및 자동 브랜치명 생성
 
-### 2. AI 기반 PR 템플릿 자동화 (`auto_fill_pr.sh`)
+### 2. AI 기반 PR 템플릿 자동화 (`scripts/pr/*/auto_fill_pr.sh`)
 - **Gemini AI** 활용하여 커밋 메시지 분석
 - PR 제목과 본문 자동 생성
 - 기존 PR 템플릿과 연동
 
-### 3. GitHub PR 자동 생성 (`create_pr.sh`)
+### 3. GitHub PR 자동 생성 (`scripts/pr/*/create_pr.sh`)
 - GitHub CLI 기반 PR 생성
 - 템플릿 기반 PR 본문 자동 적용
 - Release 브랜치 자동 감지
 
-### 4. PR 템플릿 (`pr_templates/`)
+### 4. PR 템플릿 (`scripts/templates/`)
 - 일관된 PR 형식 제공
 - 제목 및 본문 템플릿
 
@@ -44,14 +44,25 @@ git submodule update --init --recursive
 
 ### 개별 스크립트 사용
 ```bash
+# macOS (bash)
 # 1. Jira 이슈 기반 브랜치 생성
-./scripts/create_branches.sh
+./scripts/branch/mac/create_branches.sh
 
 # 2. AI 기반 PR 템플릿 생성
-./scripts/auto_fill_pr.sh
+./scripts/pr/mac/auto_fill_pr.sh
 
 # 3. GitHub PR 생성
-./scripts/create_pr.sh
+./scripts/pr/mac/create_pr.sh
+
+# Windows (PowerShell)
+# 1. Jira 이슈 기반 브랜치 생성
+powershell -ExecutionPolicy Bypass -File .\scripts\branch\win\create_branches.ps1
+
+# 2. AI 기반 PR 템플릿 생성
+powershell -ExecutionPolicy Bypass -File .\scripts\pr\win\auto_fill_pr.ps1
+
+# 3. GitHub PR 생성
+powershell -ExecutionPolicy Bypass -File .\scripts\pr\win\create_pr.ps1
 ```
 
 ## ⚙️ 필수 설정
@@ -101,22 +112,22 @@ gh auth login
 ### 1. 정규 개발 플로우
 ```bash
 # JIRA-1234 이슈로 feature 브랜치 생성
-./scripts/create_branches.sh
+./scripts/branch/mac/create_branches.sh
 # → 입력: 1 (정규), JIRA-1234
 # → 결과: feature/JIRA-1234 브랜치 생성
 
 # 개발 후 AI 기반 PR 생성
-./scripts/auto_fill_pr.sh
+./scripts/pr/mac/auto_fill_pr.sh
 # → AI가 커밋 메시지 분석하여 PR 템플릿 생성
 
 # GitHub PR 생성
-./scripts/create_pr.sh
+./scripts/pr/mac/create_pr.sh
 ```
 
 ### 2. 핫픽스 플로우
 ```bash
 # 긴급 수정을 위한 hotfix 브랜치 생성
-./scripts/create_branches.sh
+./scripts/branch/mac/create_branches.sh
 # → 입력: 2 (핫픽스), SIGN-5678
 # → 결과: fix/SIGN-5678 브랜치 생성
 ```
