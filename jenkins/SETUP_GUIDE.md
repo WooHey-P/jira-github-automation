@@ -51,7 +51,7 @@ Events: Push events, Pull requests
 ## ⚠️ 주의사항
 
 1. **Credentials 설정**: 새 Jenkins에서 모든 필요한 credentials 추가 필요
-2. **Flutter 환경**: `environment.env` 파일 참고하여 Flutter/Android SDK 설치
+2. **Flutter 환경**: `.env` 파일(프로젝트 루트) 참고하여 Flutter/Android SDK 설치
 3. **플러그인**: Generic Webhook Trigger 플러그인 설치 필수
 
 ## 🎯 작업명 패턴

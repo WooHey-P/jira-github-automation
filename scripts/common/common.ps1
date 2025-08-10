@@ -11,13 +11,21 @@ function Load-Env {
     $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
     $envFile = $null
 
-    # 현재 디렉토리 우선, 스크립트 디렉토리, 상위 디렉토리 순으로 검색
-    if (Test-Path ".\.env") {
+    # 프로젝트 루트(.git이 있는 최상위 디렉토리)의 .env 를 우선 사용하도록 간소화
+    # 1) scriptDir에서 위로 올라가며 .git 폴더가 있는 최상위(레포 루트)를 찾음
+    $dir = $scriptDir
+    while ($dir -and -not (Test-Path (Join-Path $dir ".git"))) {
+        $parent = Split-Path $dir -Parent
+        if ($parent -eq $dir) { break }
+        $dir = $parent
+    }
+    # 2) 레포 루트의 .env가 있으면 사용, 없으면 현재 작업 디렉토리의 .env만 사용
+    if ($dir -and (Test-Path (Join-Path $dir ".env"))) {
+        $envFile = (Join-Path $dir ".env")
+    } elseif (Test-Path ".\.env") {
         $envFile = ".\.env"
-    } elseif (Test-Path (Join-Path $scriptDir ".env")) {
-        $envFile = (Join-Path $scriptDir ".env")
-    } elseif (Test-Path (Join-Path $scriptDir "..\.env")) {
-        $envFile = (Join-Path $scriptDir "..\.env")
+    } else {
+        $envFile = $null
     }
 
     if ($envFile) {
