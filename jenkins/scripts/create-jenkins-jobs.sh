@@ -267,7 +267,7 @@ create_job_xml() {
       </userRemoteConfigs>
       <branches>
         <hudson.plugins.git.BranchSpec>
-          <name>*/master</name>
+          <name>*/main</name>
         </hudson.plugins.git.BranchSpec>
       </branches>
       <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
@@ -357,10 +357,10 @@ create_jenkins_job "${PROJECT_PREFIX}-staging-build"
 # 4. Production Deploy 작업
 create_job_xml \
     "${PROJECT_PREFIX}-production-deploy" \
-    "프로덕션 배포 - master 브랜치 푸시 시" \
+    "프로덕션 배포 - main 브랜치 푸시 시" \
     "jenkins/pipelines/Jenkinsfile.production-deploy" \
     "${PROJECT_PREFIX}-production-deploy-trigger" \
-    "^refs/heads/master\$" \
+    "^refs/heads/main$" \
     "\$ref"
 
 create_jenkins_job "${PROJECT_PREFIX}-production-deploy"

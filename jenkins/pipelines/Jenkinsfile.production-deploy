@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'BRANCH_NAME', defaultValue: 'master', description: 'Master branch name')
+        string(name: 'BRANCH_NAME', defaultValue: 'main', description: 'Main branch name')
         string(name: 'VERSION_NAME', defaultValue: '', description: 'Version name for release (e.g., 1.0.0)')
         string(name: 'VERSION_CODE', defaultValue: '', description: 'Version code for release (e.g., 10)')
     }
@@ -13,18 +13,18 @@ pipeline {
     }
 
     triggers {
-        // master 브랜치에 push 시 트리거
+        // main 브랜치에 push 시 트리거
         GenericTrigger(
             genericVariables: [
                 [key: 'ref', value: '$.ref'],
                 [key: 'repository_name', value: '$.repository.name']
             ],
-            causeString: 'Triggered by GitHub push to master branch',
+            causeString: 'Triggered by GitHub push to main branch',
             token: 'production-deploy-trigger',
             printContributedVariables: true,
             printPostContent: true,
             regexpFilterText: '$ref',
-            regexpFilterExpression: '^refs/heads/master$'
+            regexpFilterExpression: '^refs/heads/main$'
         )
     }
 
@@ -33,7 +33,7 @@ pipeline {
             steps {
                 checkout([
                     $class: 'GitSCM',
-                    branches: [[name: "*/master"]],
+                    branches: [[name: "*/main"]],
                     userRemoteConfigs: [[
                         url: env.GIT_URL,
                         credentialsId: 'github-credentials'
@@ -228,14 +228,7 @@ EOF
                               -H "Authorization: token $GITHUB_TOKEN" \
                               -H "Accept: application/vnd.github.v3+json" \
                               https://api.github.com/repos/OWNER/REPO/releases \
-                              -d "{
-                                \\"tag_name\\": \\"v${VERSION_NAME}\\",
-                                \\"target_commitish\\": \\"master\\",
-                                \\"name\\": \\"Release ${VERSION_NAME}\\",
-                                \\"body\\": \\"Production release ${VERSION_NAME}\\",
-                                \\"draft\\": false,
-                                \\"prerelease\\": false
-                              }"
+                              -d "{\n                                \\\"tag_name\\\": \\\"v${VERSION_NAME}\\\",\n                                \\\"target_commitish\\\": \\\"main\\\",\n                                \\\"name\\\": \\\"Release ${VERSION_NAME}\\\",\n                                \\\"body\\\": \\\"Production release ${VERSION_NAME}\\\",\n                                \\\"draft\\\": false,\n                                \\\"prerelease\\\": false\n                              }"
                         '''
                     }
                 }

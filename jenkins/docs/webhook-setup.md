@@ -82,12 +82,12 @@ Secret: (선택사항 - 보안을 위해 설정 권장)
 #### 📦 Production Deploy (`production-deploy-trigger`)
 **트리거 조건:**
 - 이벤트: Push
-- 브랜치: `master` (정확히 일치)
+- 브랜치: `main` (정확히 일치)
 
 **GitHub 이벤트:**
 ```json
 {
-  "ref": "refs/heads/master",
+  "ref": "refs/heads/main",
   "repository": {
     "name": "mobble_commute_driver_flutter"
   }

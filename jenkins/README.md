@@ -63,7 +63,7 @@ cd jenkins/scripts
 | ① | PR 생성 | feature/* | develop/* | 단위 테스트 실행 |
 | ② | 머지 완료 | develop/* | - | dev 빌드 & Firebase 배포 |
 | ④ | 머지 완료 | release/* | - | stg 빌드 & Firebase 배포 |
-| ⑥ | 머지 완료 | master | - | prod 빌드 & Store 업로드 |
+| ⑥ | 머지 완료 | main | - | prod 빌드 & Store 업로드 |
 
 ## 📚 추가 문서
 

@@ -9,7 +9,7 @@ jenkins/
 ├── Jenkinsfile.unit-tests          # ① PR 단위 테스트
 ├── Jenkinsfile.dev-build           # ② develop 브랜치 빌드 & 배포
 ├── Jenkinsfile.staging-build       # ④ release 브랜치 빌드 & 배포
-├── Jenkinsfile.production-deploy   # ⑥ master 브랜치 프로덕션 배포
+├── Jenkinsfile.production-deploy   # ⑥ main 브랜치 프로덕션 배포
 ├── jenkins-jobs-config.xml         # Jenkins 작업 설정
 └── webhook-setup.md                # GitHub 웹훅 설정 가이드
 ```
@@ -105,7 +105,7 @@ Jenkins 관리 > Manage Credentials에서 다음 자격 증명을 추가하세�
    - SCM: Git 선택
    - Repository URL: 프로젝트 Git URL
    - Credentials: github-credentials 선택
-   - Branch: */master (모든 브랜치에서 Jenkinsfile 읽기 위해)
+   - Branch: */main (모든 브랜치에서 Jenkinsfile 읽기 위해)
    - Script Path: 각각의 Jenkinsfile 경로 지정
      - `jenkins/Jenkinsfile.unit-tests`
      - `jenkins/Jenkinsfile.dev-build`
@@ -147,7 +147,7 @@ Jenkins 관리 > Manage Credentials에서 다음 자격 증명을 추가하세�
 - Post content parameters:
   - Variable: `ref`, Expression: `$.ref`
 - Optional filter:
-  - Expression: `^refs/heads/master$`
+  - Expression: `^refs/heads/main$`
   - Text: `$ref`
 
 ## 🔗 GitHub 웹훅 설정
@@ -261,9 +261,9 @@ git push origin release/1.0.0
 
 ### 4. 프로덕션 배포 파이프라인 테스트
 ```bash
-# master 브랜치에 푸시 (VERSION_NAME, VERSION_CODE 파라미터와 함께)
-git checkout master
-git push origin master
+# main 브랜치에 푸시 (VERSION_NAME, VERSION_CODE 파라미터와 함께)
+git checkout main
+git push origin main
 ```
 
 ## 📝 주의사항
