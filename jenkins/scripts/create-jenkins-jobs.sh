@@ -114,30 +114,39 @@ if [ ! -f "$JENKINS_CLI_JAR" ]; then
     fi
 fi
 
-# 다운로드된 파일 검증 및 디버그 출력
+# 다운로드된 파일 검증 (간결화)
 if [[ -f "$JENKINS_CLI_JAR" ]]; then
     FILE_SIZE=$(stat -c%s "$JENKINS_CLI_JAR" 2>/dev/null || stat -f%z "$JENKINS_CLI_JAR" 2>/dev/null || echo 0)
     print_step "다운로드 HTTP 상태 코드: ${HTTP_CODE:-unknown}"
     print_step "다운로드된 파일 크기(bytes): ${FILE_SIZE}"
-    if command -v file >/dev/null 2>&1; then
-        FILE_INFO=$(file "$JENKINS_CLI_JAR")
-        print_step "다운로드된 파일 타입: ${FILE_INFO}"
-    fi
-    # 간단 검사: HTTP 200 및 ZIP 아카이브 여부
-    if [[ "${HTTP_CODE:-000}" != "200" ]] || ( command -v file >/dev/null 2>&1 && ! file "$JENKINS_CLI_JAR" | grep -qi 'zip archive' ); then
-        print_error "다운로드된 파일이 유효한 JAR이 아닙니다. 서버 응답을 확인하세요."
-        echo "---- HTTP 헤더 ----"
-        [[ -f "$TMP_HEADERS" ]] && sed -n '1,200p' "$TMP_HEADERS"
-        echo "---- 다운로드 파일 시작(확인용) ----"
-        head -n 200 "$JENKINS_CLI_JAR" | sed -n '1,200p'
-        echo "---- 다운로드 파일 끝 ----"
+    # 간단 검사: HTTP 200 및 파일 크기(임계값)
+    if [[ "${HTTP_CODE:-000}" != "200" || "${FILE_SIZE}" -lt 1024 ]]; then
+        print_error "Jenkins CLI 다운로드에 실패했거나 유효하지 않은 파일입니다. 서버 응답을 확인하세요."
+        [[ -f "$TMP_HEADERS" ]] && print_step "HTTP 헤더 (최대 200줄):" && sed -n '1,200p' "$TMP_HEADERS"
+        rm -f "$JENKINS_CLI_JAR" 2>/dev/null || true
         exit 1
     fi
+else
+    print_error "Jenkins CLI JAR 파일이 존재하지 않습니다: $JENKINS_CLI_JAR"
+    exit 1
 fi
 
 # Jenkins 연결 테스트
 print_step "Jenkins 연결 테스트..."
-java -jar "$JENKINS_CLI_JAR" -s "$JENKINS_URL" -auth "$JENKINS_USER:$JENKINS_PASSWORD" who-am-i
+if ! command -v java >/dev/null 2>&1; then
+    print_error "Java가 설치되어 있지 않습니다. 'java' 명령을 설치/설정하세요."
+    exit 1
+fi
+
+if [[ ! -f "$JENKINS_CLI_JAR" ]]; then
+    print_error "Jenkins CLI JAR이 없습니다: $JENKINS_CLI_JAR"
+    exit 1
+fi
+
+if ! java -jar "$JENKINS_CLI_JAR" -s "$JENKINS_URL" -auth "$JENKINS_USER:$JENKINS_PASSWORD" who-am-i >/dev/null 2>&1; then
+    print_error "Jenkins 연결 테스트에 실패했습니다. URL, 사용자, 패스워드(API 토큰)를 확인하세요."
+    exit 1
+fi
 
 # 작업 XML 템플릿 생성 함수
 create_job_xml() {
