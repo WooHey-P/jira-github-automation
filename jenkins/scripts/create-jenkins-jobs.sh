@@ -22,6 +22,24 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ENV_FILE="$REPO_ROOT/.env"
 JENKINS_ENV_FILE="$REPO_ROOT/jenkins/environment.env"
 
+# 색상 정의
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_step() {
+    echo -e "${GREEN}[STEP]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
 if [[ -f "$ENV_FILE" ]]; then
     print_step "환경변수 로드: $ENV_FILE"
     set -o allexport
@@ -43,18 +61,6 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
-
-print_step() {
-    echo -e "${GREEN}[STEP]${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
 
 # 사용법 출력
 usage() {
