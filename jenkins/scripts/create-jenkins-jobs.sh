@@ -88,18 +88,25 @@ echo "  PROJECT_PREFIX: $PROJECT_PREFIX"
 print_step "Jenkins CLI 다운로드..."
 if [ ! -f "$JENKINS_CLI_JAR" ]; then
     DOWNLOAD_URL="${JENKINS_URL%/}/jnlpJars/jenkins-cli.jar"
+    TMP_HEADERS="/tmp/jenkins-cli.headers"
+    HTTP_CODE=""
     if command -v curl >/dev/null 2>&1; then
         # 인증 정보가 있으면 사용자:비밀번호(또는 API 토큰)로 시도
         if [[ -n "$JENKINS_USER" && -n "$JENKINS_PASSWORD" ]]; then
-            curl -sSfL -u "$JENKINS_USER:$JENKINS_PASSWORD" "$DOWNLOAD_URL" -o "$JENKINS_CLI_JAR" || { print_error "Jenkins CLI 다운로드 실패 (curl 인증)"; exit 1; }
+            HTTP_CODE=$(curl -sS -w "%{http_code}" -D "$TMP_HEADERS" -u "$JENKINS_USER:$JENKINS_PASSWORD" "$DOWNLOAD_URL" -o "$JENKINS_CLI_JAR" || echo "000")
         else
-            curl -sSfL "$DOWNLOAD_URL" -o "$JENKINS_CLI_JAR" || { print_error "Jenkins CLI 다운로드 실패 (curl)"; exit 1; }
+            HTTP_CODE=$(curl -sS -w "%{http_code}" -D "$TMP_HEADERS" "$DOWNLOAD_URL" -o "$JENKINS_CLI_JAR" || echo "000")
         fi
     elif command -v wget >/dev/null 2>&1; then
+        # wget는 헤더 출력 옵션이 제한적이므로 --server-response로 헤더를 stderr에 캡처
         if [[ -n "$JENKINS_USER" && -n "$JENKINS_PASSWORD" ]]; then
-            wget --quiet --auth-no-challenge --user="$JENKINS_USER" --password="$JENKINS_PASSWORD" "$DOWNLOAD_URL" -O "$JENKINS_CLI_JAR" || { print_error "Jenkins CLI 다운로드 실패 (wget 인증)"; exit 1; }
+            wget --server-response --auth-no-challenge --user="$JENKINS_USER" --password="$JENKINS_PASSWORD" "$DOWNLOAD_URL" -O "$JENKINS_CLI_JAR" 2> /tmp/jenkins-cli.wget.headers || true
+            HTTP_CODE=$(awk '/^  HTTP/{code=$2} END{print code+0}' /tmp/jenkins-cli.wget.headers 2>/dev/null || echo "000")
+            cp /tmp/jenkins-cli.wget.headers "$TMP_HEADERS" 2>/dev/null || true
         else
-            wget --quiet --max-redirect=10 "$DOWNLOAD_URL" -O "$JENKINS_CLI_JAR" || { print_error "Jenkins CLI 다운로드 실패 (wget)"; exit 1; }
+            wget --server-response "$DOWNLOAD_URL" -O "$JENKINS_CLI_JAR" 2> /tmp/jenkins-cli.wget.headers || true
+            HTTP_CODE=$(awk '/^  HTTP/{code=$2} END{print code+0}' /tmp/jenkins-cli.wget.headers 2>/dev/null || echo "000")
+            cp /tmp/jenkins-cli.wget.headers "$TMP_HEADERS" 2>/dev/null || true
         fi
     else
         print_error "wget 또는 curl이 설치되어 있지 않아 Jenkins CLI를 다운로드할 수 없습니다."
@@ -107,13 +114,20 @@ if [ ! -f "$JENKINS_CLI_JAR" ]; then
     fi
 fi
 
-# 다운로드된 파일이 실제 JAR(Zip)인지 간단 검증
+# 다운로드된 파일 검증 및 디버그 출력
 if [[ -f "$JENKINS_CLI_JAR" ]]; then
-    if ! command -v file >/dev/null 2>&1 || file "$JENKINS_CLI_JAR" | grep -qi 'zip archive'; then
-        # 정상으로 판단 (file 명령이 없으면 건너뜀)
-        true
-    else
+    FILE_SIZE=$(stat -c%s "$JENKINS_CLI_JAR" 2>/dev/null || stat -f%z "$JENKINS_CLI_JAR" 2>/dev/null || echo 0)
+    print_step "다운로드 HTTP 상태 코드: ${HTTP_CODE:-unknown}"
+    print_step "다운로드된 파일 크기(bytes): ${FILE_SIZE}"
+    if command -v file >/dev/null 2>&1; then
+        FILE_INFO=$(file "$JENKINS_CLI_JAR")
+        print_step "다운로드된 파일 타입: ${FILE_INFO}"
+    fi
+    # 간단 검사: HTTP 200 및 ZIP 아카이브 여부
+    if [[ "${HTTP_CODE:-000}" != "200" ]] || ( command -v file >/dev/null 2>&1 && ! file "$JENKINS_CLI_JAR" | grep -qi 'zip archive' ); then
         print_error "다운로드된 파일이 유효한 JAR이 아닙니다. 서버 응답을 확인하세요."
+        echo "---- HTTP 헤더 ----"
+        [[ -f "$TMP_HEADERS" ]] && sed -n '1,200p' "$TMP_HEADERS"
         echo "---- 다운로드 파일 시작(확인용) ----"
         head -n 200 "$JENKINS_CLI_JAR" | sed -n '1,200p'
         echo "---- 다운로드 파일 끝 ----"
