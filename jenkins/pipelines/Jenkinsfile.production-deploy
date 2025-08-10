@@ -1,0 +1,264 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'BRANCH_NAME', defaultValue: 'master', description: 'Master branch name')
+        string(name: 'VERSION_NAME', defaultValue: '', description: 'Version name for release (e.g., 1.0.0)')
+        string(name: 'VERSION_CODE', defaultValue: '', description: 'Version code for release (e.g., 10)')
+    }
+
+    environment {
+        FLUTTER_VERSION = '3.24.0'
+        FLAVOR = 'prod'
+    }
+
+    triggers {
+        // master 브랜치에 push 시 트리거
+        GenericTrigger(
+            genericVariables: [
+                [key: 'ref', value: '$.ref'],
+                [key: 'repository_name', value: '$.repository.name']
+            ],
+            causeString: 'Triggered by GitHub push to master branch',
+            token: 'production-deploy-trigger',
+            printContributedVariables: true,
+            printPostContent: true,
+            regexpFilterText: '$ref',
+            regexpFilterExpression: '^refs/heads/master$'
+        )
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: "*/master"]],
+                    userRemoteConfigs: [[
+                        url: env.GIT_URL,
+                        credentialsId: 'github-credentials'
+                    ]]
+                ])
+            }
+        }
+
+        stage('Version Validation') {
+            steps {
+                script {
+                    if (!params.VERSION_NAME || !params.VERSION_CODE) {
+                        error("VERSION_NAME and VERSION_CODE parameters are required for production build")
+                    }
+                    echo "Building version ${params.VERSION_NAME} (${params.VERSION_CODE})"
+                }
+            }
+        }
+
+        stage('Setup Environment') {
+            parallel {
+                stage('Setup Flutter') {
+                    steps {
+                        sh '''
+                            flutter --version
+                            flutter config --no-analytics
+                            flutter pub get
+                        '''
+                    }
+                }
+                stage('Setup Android Signing') {
+                    steps {
+                        script {
+                            withCredentials([
+                                string(credentialsId: 'android-keystore-base64', variable: 'ANDROID_KEYSTORE_BASE64'),
+                                string(credentialsId: 'android-keystore-password', variable: 'ANDROID_KEYSTORE_PASSWORD'),
+                                string(credentialsId: 'android-key-password', variable: 'ANDROID_KEY_PASSWORD'),
+                                string(credentialsId: 'android-key-alias', variable: 'ANDROID_KEY_ALIAS')
+                            ]) {
+                                sh '''
+                                    echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/mobble-integration.keystore
+                                    cat > android/key.properties << EOF
+storePassword=$ANDROID_KEYSTORE_PASSWORD
+keyPassword=$ANDROID_KEY_PASSWORD
+keyAlias=$ANDROID_KEY_ALIAS
+storeFile=mobble-integration.keystore
+EOF
+                                '''
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Build Android') {
+            steps {
+                sh '''
+                    # AAB(App Bundle) 빌드 - Play Store용
+                    flutter build appbundle --flavor prod --dart-define=FLAVOR=prod \
+                        --build-name=${VERSION_NAME} --build-number=${VERSION_CODE}
+
+                    # APK 빌드 - 백업용
+                    flutter build apk --flavor prod --dart-define=FLAVOR=prod \
+                        --build-name=${VERSION_NAME} --build-number=${VERSION_CODE}
+
+                    ls -la build/app/outputs/bundle/prodRelease/
+                    ls -la build/app/outputs/flutter-apk/
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'build/app/outputs/bundle/prodRelease/app-prod-release.aab', allowEmptyArchive: false
+                    archiveArtifacts artifacts: 'build/app/outputs/flutter-apk/app-prod-release.apk', allowEmptyArchive: false
+                }
+            }
+        }
+
+        stage('Build iOS') {
+            when {
+                expression { return isUnix() && sh(script: 'uname', returnStdout: true).trim() == 'Darwin' }
+            }
+            steps {
+                script {
+                    withCredentials([
+                        string(credentialsId: 'ios-distribution-certificate-base64', variable: 'DISTRIBUTION_CERTIFICATE_BASE64'),
+                        string(credentialsId: 'ios-p12-password', variable: 'P12_PASSWORD'),
+                        string(credentialsId: 'ios-appstore-provision-profile-base64', variable: 'APPSTORE_PROVISION_PROFILE_BASE64'),
+                        string(credentialsId: 'ios-keychain-password', variable: 'KEYCHAIN_PASSWORD')
+                    ]) {
+                        sh '''
+                            # iOS 배포용 인증서 및 프로비저닝 프로파일 설정
+                            CERTIFICATE_PATH=$WORKSPACE/distribution_certificate.p12
+                            PP_PATH=$WORKSPACE/appstore_pp.mobileprovision
+                            KEYCHAIN_PATH=$WORKSPACE/app-signing.keychain-db
+
+                            echo -n "$DISTRIBUTION_CERTIFICATE_BASE64" | base64 --decode > $CERTIFICATE_PATH
+                            echo -n "$APPSTORE_PROVISION_PROFILE_BASE64" | base64 --decode > $PP_PATH
+
+                            security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+                            security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+                            security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+                            security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+                            security list-keychain -d user -s $KEYCHAIN_PATH
+
+                            mkdir -p ~/Library/MobileDevice/Provisioning\\ Profiles
+                            cp $PP_PATH ~/Library/MobileDevice/Provisioning\\ Profiles/
+
+                            # iOS 빌드
+                            flutter build ios --flavor prod --dart-define=FLAVOR=prod --release \
+                                --build-name=${VERSION_NAME} --build-number=${VERSION_CODE}
+                            cd ios
+                            xcodebuild -workspace Runner.xcworkspace -scheme prod -configuration Release-prod archive -archivePath ../build/ios/Runner.xcarchive
+                            xcodebuild -exportArchive -archivePath ../build/ios/Runner.xcarchive -exportOptionsPlist ExportOptions-prod.plist -exportPath ../build/ios/ipa
+                        '''
+                    }
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'build/ios/ipa/*.ipa', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Deploy to Stores') {
+            parallel {
+                stage('Deploy to Google Play') {
+                    steps {
+                        script {
+                            withCredentials([
+                                file(credentialsId: 'google-play-service-account-key', variable: 'GOOGLE_PLAY_SERVICE_ACCOUNT_KEY')
+                            ]) {
+                                sh '''
+                                    # Fastlane을 사용하여 Google Play Store에 배포
+                                    cd android
+                                    bundle exec fastlane deploy_to_playstore \
+                                        service_account_json_key_file:$GOOGLE_PLAY_SERVICE_ACCOUNT_KEY \
+                                        aab_path:../build/app/outputs/bundle/prodRelease/app-prod-release.aab \
+                                        track:internal \
+                                        version_name:${VERSION_NAME} \
+                                        version_code:${VERSION_CODE}
+                                '''
+                            }
+                        }
+                    }
+                }
+                stage('Deploy to TestFlight') {
+                    when {
+                        expression { return isUnix() && sh(script: 'uname', returnStdout: true).trim() == 'Darwin' }
+                    }
+                    steps {
+                        script {
+                            withCredentials([
+                                string(credentialsId: 'app-store-connect-api-key-id', variable: 'API_KEY_ID'),
+                                string(credentialsId: 'app-store-connect-issuer-id', variable: 'ISSUER_ID'),
+                                file(credentialsId: 'app-store-connect-api-key', variable: 'API_KEY_FILE')
+                            ]) {
+                                sh '''
+                                    # Fastlane을 사용하여 TestFlight에 배포
+                                    cd ios
+                                    bundle exec fastlane deploy_to_testflight \
+                                        api_key_path:$API_KEY_FILE \
+                                        api_key_id:$API_KEY_ID \
+                                        issuer_id:$ISSUER_ID \
+                                        ipa_path:../build/ios/ipa/*.ipa \
+                                        version:${VERSION_NAME} \
+                                        build_number:${VERSION_CODE}
+                                '''
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Create Git Tag') {
+            steps {
+                script {
+                    withCredentials([string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')]) {
+                        sh '''
+                            git config user.name "Jenkins CI"
+                            git config user.email "jenkins@company.com"
+
+                            # Git 태그 생성
+                            git tag -a "v${VERSION_NAME}" -m "Release version ${VERSION_NAME}"
+                            git push origin "v${VERSION_NAME}"
+
+                            # GitHub Release 생성
+                            curl -X POST \
+                              -H "Authorization: token $GITHUB_TOKEN" \
+                              -H "Accept: application/vnd.github.v3+json" \
+                              https://api.github.com/repos/OWNER/REPO/releases \
+                              -d "{
+                                \\"tag_name\\": \\"v${VERSION_NAME}\\",
+                                \\"target_commitish\\": \\"master\\",
+                                \\"name\\": \\"Release ${VERSION_NAME}\\",
+                                \\"body\\": \\"Production release ${VERSION_NAME}\\",
+                                \\"draft\\": false,
+                                \\"prerelease\\": false
+                              }"
+                        '''
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            script {
+                echo "Production deployment successful for version ${params.VERSION_NAME}!"
+                // Slack 알림 등 추가 가능
+            }
+        }
+        failure {
+            script {
+                echo "Production deployment failed!"
+                // 실패 알림
+            }
+        }
+    }
+}
+

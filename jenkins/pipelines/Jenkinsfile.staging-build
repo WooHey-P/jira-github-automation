@@ -1,0 +1,194 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'BRANCH_NAME', defaultValue: 'release/1.0.0', description: 'Release branch name')
+    }
+
+    environment {
+        FLUTTER_VERSION = '3.24.0'
+        FLAVOR = 'stg'
+    }
+
+    triggers {
+        // release 브랜치에 push 시 트리거
+        GenericTrigger(
+            genericVariables: [
+                [key: 'ref', value: '$.ref'],
+                [key: 'repository_name', value: '$.repository.name']
+            ],
+            causeString: 'Triggered by GitHub push to release branch',
+            token: 'staging-build-trigger',
+            printContributedVariables: true,
+            printPostContent: true,
+            regexpFilterText: '$ref',
+            regexpFilterExpression: '^refs/heads/release/.*'
+        )
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                script {
+                    def branchName = params.BRANCH_NAME ?: env.GIT_BRANCH?.replace('origin/', '') ?: 'release/1.0.0'
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: "*/${branchName}"]],
+                        userRemoteConfigs: [[
+                            url: env.GIT_URL,
+                            credentialsId: 'github-credentials'
+                        ]]
+                    ])
+                }
+            }
+        }
+
+        stage('Setup Environment') {
+            parallel {
+                stage('Setup Flutter') {
+                    steps {
+                        sh '''
+                            flutter --version
+                            flutter config --no-analytics
+                            flutter pub get
+                        '''
+                    }
+                }
+                stage('Setup Android Signing') {
+                    steps {
+                        script {
+                            withCredentials([
+                                string(credentialsId: 'android-keystore-base64', variable: 'ANDROID_KEYSTORE_BASE64'),
+                                string(credentialsId: 'android-keystore-password', variable: 'ANDROID_KEYSTORE_PASSWORD'),
+                                string(credentialsId: 'android-key-password', variable: 'ANDROID_KEY_PASSWORD'),
+                                string(credentialsId: 'android-key-alias', variable: 'ANDROID_KEY_ALIAS')
+                            ]) {
+                                sh '''
+                                    echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/mobble-integration.keystore
+                                    cat > android/key.properties << EOF
+storePassword=$ANDROID_KEYSTORE_PASSWORD
+keyPassword=$ANDROID_KEY_PASSWORD
+keyAlias=$ANDROID_KEY_ALIAS
+storeFile=mobble-integration.keystore
+EOF
+                                '''
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Build Android') {
+            steps {
+                sh '''
+                    flutter build apk --flavor stg --dart-define=FLAVOR=stg
+                    flutter build appbundle --flavor stg --dart-define=FLAVOR=stg
+                    ls -la build/app/outputs/flutter-apk/
+                    ls -la build/app/outputs/bundle/stgRelease/
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'build/app/outputs/flutter-apk/app-stg-release.apk', allowEmptyArchive: false
+                    archiveArtifacts artifacts: 'build/app/outputs/bundle/stgRelease/app-stg-release.aab', allowEmptyArchive: false
+                }
+            }
+        }
+
+        stage('Build iOS') {
+            when {
+                expression { return isUnix() && sh(script: 'uname', returnStdout: true).trim() == 'Darwin' }
+            }
+            steps {
+                script {
+                    withCredentials([
+                        string(credentialsId: 'ios-build-certificate-base64', variable: 'BUILD_CERTIFICATE_BASE64'),
+                        string(credentialsId: 'ios-p12-password', variable: 'P12_PASSWORD'),
+                        string(credentialsId: 'ios-provision-profile-base64', variable: 'BUILD_PROVISION_PROFILE_BASE64'),
+                        string(credentialsId: 'ios-keychain-password', variable: 'KEYCHAIN_PASSWORD')
+                    ]) {
+                        sh '''
+                            # iOS 인증서 및 프로비저닝 프로파일 설정
+                            CERTIFICATE_PATH=$WORKSPACE/build_certificate.p12
+                            PP_PATH=$WORKSPACE/build_pp.mobileprovision
+                            KEYCHAIN_PATH=$WORKSPACE/app-signing.keychain-db
+
+                            echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode > $CERTIFICATE_PATH
+                            echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode > $PP_PATH
+
+                            security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+                            security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+                            security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+                            security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+                            security list-keychain -d user -s $KEYCHAIN_PATH
+
+                            mkdir -p ~/Library/MobileDevice/Provisioning\\ Profiles
+                            cp $PP_PATH ~/Library/MobileDevice/Provisioning\\ Profiles/
+
+                            # iOS 빌드
+                            flutter build ios --flavor stg --dart-define=FLAVOR=stg --release --no-codesign
+                            cd ios
+                            xcodebuild -workspace Runner.xcworkspace -scheme stg -configuration Release-stg archive -archivePath ../build/ios/Runner.xcarchive
+                            xcodebuild -exportArchive -archivePath ../build/ios/Runner.xcarchive -exportOptionsPlist ExportOptions-stg.plist -exportPath ../build/ios/ipa
+                        '''
+                    }
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'build/ios/ipa/*.ipa', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Deploy to Firebase') {
+            steps {
+                script {
+                    withCredentials([
+                        string(credentialsId: 'firebase-stg-android-app-id', variable: 'FIREBASE_STG_ANDROID_APP_ID'),
+                        string(credentialsId: 'firebase-stg-ios-app-id', variable: 'FIREBASE_STG_IOS_APP_ID'),
+                        file(credentialsId: 'firebase-service-account-key', variable: 'FIREBASE_SERVICE_ACCOUNT_KEY')
+                    ]) {
+                        sh '''
+                            export GOOGLE_APPLICATION_CREDENTIALS=$FIREBASE_SERVICE_ACCOUNT_KEY
+
+                            # Android APK 업로드
+                            if [ -f build/app/outputs/flutter-apk/app-stg-release.apk ]; then
+                                firebase appdistribution:distribute build/app/outputs/flutter-apk/app-stg-release.apk \
+                                    --app $FIREBASE_STG_ANDROID_APP_ID \
+                                    --groups "qa-team" \
+                                    --release-notes "Staging build from release branch - Build #${BUILD_NUMBER}"
+                            fi
+
+                            # iOS IPA 업로드
+                            if [ -f build/ios/ipa/*.ipa ]; then
+                                firebase appdistribution:distribute build/ios/ipa/*.ipa \
+                                    --app $FIREBASE_STG_IOS_APP_ID \
+                                    --groups "qa-team" \
+                                    --release-notes "Staging build from release branch - Build #${BUILD_NUMBER}"
+                            fi
+                        '''
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            script {
+                echo "Staging build and deployment successful!"
+            }
+        }
+        failure {
+            script {
+                echo "Staging build failed!"
+            }
+        }
+    }
+}
