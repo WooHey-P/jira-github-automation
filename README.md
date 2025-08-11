@@ -5,7 +5,9 @@ Jira 이슈 키 기반 브랜치 생성부터 AI 기반 PR 자동화까지, 개�
 ## 🚀 주요 기능
 
 ### 1. Jira 기반 브랜치 자동 생성 (`scripts/branch/*/create_branches.sh`)
-- **정규 배포**: `feature/JIRA-123` 형태의 브랜치 생성
+- **정규 배포**: `story|feature|other선택/JIRA-1234/설명` 형태 (예: `story/SIGN-1234/email-check`)
+  - 첫 세그먼트는 스크립트 실행 시 1) story 2) feature 3) other(직접 입력) 중 선택
+  - 설명은 소문자/숫자/하이픈으로 자동 정규화
 - **핫픽스**: `fix/JIRA-456` 형태의 브랜치 생성
 - Jira 이슈 키 검증 및 자동 브랜치명 생성
 
@@ -27,8 +29,8 @@ Jira 이슈 키 기반 브랜치 생성부터 AI 기반 PR 자동화까지, 개�
 
 ```
 Jira 이슈 생성 → 브랜치 생성 → 개발 → AI PR 생성 → GitHub PR
-    ↓              ↓           ↓         ↓         ↓
-  JIRA-123   feature/JIRA-123  커밋   AI 분석   자동 PR
+    ↓              ↓                 ↓         ↓         ↓
+  SIGN-1234  story/SIGN-1234/email-check  커밋   AI 분석   자동 PR
 ```
 
 ## 🛠 설치 및 사용법
@@ -87,7 +89,7 @@ DEFAULT_BASE_BRANCH=main
 GITHUB_USERNAME=your_github_username
 
 # Branch Naming Configuration
-FEATURE_BRANCH_PREFIX=story/
+# FEATURE_BRANCH_PREFIX 제거됨 (동적 선택: story|feature|other)
 HOTFIX_BRANCH_PREFIX=fix/
 
 # Jira Configuration
@@ -111,25 +113,22 @@ gh auth login
 
 ### 1. 정규 개발 플로우
 ```bash
-# JIRA-1234 이슈로 feature 브랜치 생성
 ./scripts/branch/mac/create_branches.sh
-# → 입력: 1 (정규), JIRA-1234
-# → 결과: feature/JIRA-1234 브랜치 생성
-
-# 개발 후 AI 기반 PR 생성
-./scripts/pr/mac/auto_fill_pr.sh
-# → AI가 커밋 메시지 분석하여 PR 템플릿 생성
-
-# GitHub PR 생성
-./scripts/pr/mac/create_pr.sh
+# 입력 흐름:
+# 1) 정규 선택
+# base branch 선택
+# 1차 유형 선택: 1(story) / 2(feature) / 3(other 직접입력)
+# Jira 키: SIGN-1234
+# 설명: Email Check
+# 버전: 1.2.3
+# 결과 브랜치 예: story/SIGN-1234/email-check
 ```
 
 ### 2. 핫픽스 플로우
 ```bash
-# 긴급 수정을 위한 hotfix 브랜치 생성
 ./scripts/branch/mac/create_branches.sh
 # → 입력: 2 (핫픽스), SIGN-5678
-# → 결과: fix/SIGN-5678 브랜치 생성
+# → 결과: fix/SIGN-5678
 ```
 
 ## 🔄 서브모듈 업데이트

@@ -31,7 +31,6 @@ load_env() {
 set_defaults() {
     export GEMINI_API_URL="${GEMINI_API_URL:-https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent}"
     export DEFAULT_BASE_BRANCH="${DEFAULT_BASE_BRANCH:-main}"
-    export FEATURE_BRANCH_PREFIX="${FEATURE_BRANCH_PREFIX:-story/}"
     export HOTFIX_BRANCH_PREFIX="${HOTFIX_BRANCH_PREFIX:-fix/}"
     export JIRA_BASE_URL="${JIRA_BASE_URL:-https://your-company.atlassian.net/browse/}"
 }

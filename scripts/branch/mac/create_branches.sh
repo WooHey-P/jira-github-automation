@@ -92,21 +92,39 @@ if [ "$IS_HOTFIX" = true ]; then
   exit 0
 fi
 
-# ✅ 정규 배포 작업
+# ✅ 정규 배포 작업 (변경된 플로우)
 echo ""
 echo "┌──────────────────────────────────────────────┐"
-read -p "│ 📘 상위 Story 키 입력 (예: SIGN-1000): " STORY_KEY
+echo "│ 브랜치 1차 유형을 선택하세요:"
+echo "│ 1) story"
+echo "│ 2) feature"
+echo "│ 3) other (직접 입력)"
 echo "└──────────────────────────────────────────────┘"
-if [[ ! "$STORY_KEY" =~ ^[A-Za-z]+-[0-9]+$ ]]; then
-  echo "❌ Story 키 형식이 올바르지 않습니다."
+read -p "👉 번호 입력 (1,2,3): " TYPE_LEVEL1
+
+if [[ "$TYPE_LEVEL1" == "1" || -z "$TYPE_LEVEL1" ]]; then
+  FIRST_SEGMENT="story"
+elif [[ "$TYPE_LEVEL1" == "2" ]]; then
+  FIRST_SEGMENT="feature"
+elif [[ "$TYPE_LEVEL1" == "3" ]]; then
+  read -p "🔤 직접 입력 (소문자, 숫자, 하이픈 허용): " CUSTOM_SEG
+  # 소문자화
+  CUSTOM_SEG=$(echo "$CUSTOM_SEG" | tr '[:upper:]' '[:lower:]')
+  if [[ ! "$CUSTOM_SEG" =~ ^[a-z0-9-]+$ ]]; then
+    echo "❌ 허용되지 않는 문자입니다."
+    exit 1
+  fi
+  FIRST_SEGMENT="$CUSTOM_SEG"
+else
+  echo "❌ 잘못된 입력입니다."
   exit 1
 fi
 
 echo "┌──────────────────────────────────────────────┐"
-read -p "│ 📗 하위 Feature 키 입력 (예: SIGN-1001): " FEATURE_KEY
+read -p "│ 📘 Jira 이슈 키 입력 (예: SIGN-1000): " JIRA_KEY
 echo "└──────────────────────────────────────────────┘"
-if [[ ! "$FEATURE_KEY" =~ ^[A-Za-z]+-[0-9]+$ ]]; then
-  echo "❌ Feature 키 형식이 올바르지 않습니다."
+if [[ ! "$JIRA_KEY" =~ ^[A-Za-z]+-[0-9]+$ ]]; then
+  echo "❌ Jira 키 형식이 올바르지 않습니다."
   exit 1
 fi
 
@@ -114,33 +132,19 @@ echo "┌───────────────────────�
 read -p "│ 📝 간단한 설명 입력 (예: email check): " DESC_INPUT
 echo "└──────────────────────────────────────────────┘"
 
-# 원본 보존
+# 설명 처리
 ORIGINAL_DESC="$DESC_INPUT"
-
-# 1. 띄어쓰기를 하이픈으로 변환
 DESC=$(echo "$DESC_INPUT" | tr ' ' '-')
-
-# 2. 소문자로 변환
 DESC=$(echo "$DESC" | tr '[:upper:]' '[:lower:]')
-
-# 3. 연속된 하이픈 제거 (예: "hello  world" -> "hello--world" -> "hello-world")
 DESC=$(echo "$DESC" | sed 's/--*/-/g')
-
-# 4. 앞뒤 하이픈 제거
-DESC=$(echo "$DESC" | sed 's/^-\|-$//g')
-
-# 변환 과정 표시
+DESC=$(echo "$DESC" | sed 's/^-\|-$/-/g')
 if [[ "$ORIGINAL_DESC" != "$DESC" ]]; then
   echo "🔄 자동 변환됨: '$ORIGINAL_DESC' → '$DESC'"
 fi
-
-# 빈 문자열 검사
 if [[ -z "$DESC" ]]; then
   echo "❌ 설명이 비어있습니다."
   exit 1
 fi
-
-# 유효성 검사
 if [[ ! "$DESC" =~ ^[a-z0-9-]+$ ]]; then
   echo "❌ 설명에 허용되지 않는 문자가 포함되어 있습니다."
   echo "   허용: 영문, 숫자, 하이픈(-)"
@@ -160,7 +164,7 @@ fi
 
 RELEASE_BRANCH="release/$VERSION"
 DEVELOP_BRANCH="develop/$VERSION"
-FEATURE_BRANCH="${FEATURE_BRANCH_PREFIX}$VERSION/$STORY_KEY/feature/$FEATURE_KEY/$DESC"
+FEATURE_BRANCH="$FIRST_SEGMENT/$JIRA_KEY/$DESC"
 
 echo ""
 echo "📋 생성될 브랜치 목록:"
@@ -212,4 +216,4 @@ echo "   🔹 $RELEASE_BRANCH (푸시됨)"
 echo "   🔹 $DEVELOP_BRANCH (푸시됨)"
 echo "   🔹 $FEATURE_BRANCH (로컬만 생성됨)"
 echo ""
-echo "🔗 Jira 이슈 바로가기: ${JIRA_BASE_URL}$FEATURE_KEY"
+echo "🔗 Jira 이슈 바로가기: ${JIRA_BASE_URL}$JIRA_KEY"
