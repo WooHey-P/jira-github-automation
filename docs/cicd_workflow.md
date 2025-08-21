@@ -44,3 +44,51 @@
 
 
 ### 차트
+```mermaid
+flowchart TD
+
+    A["① feature/{JIRA-KEY}-description 브랜치 생성"] --> B["② feature → dev/x.x.x 로 PR"]
+    B --> J_dev
+    K_dev --> E["③ develop 기준 artifact 생성 및 dev 서버 배포"] & L["⑥ release 기준 artifact 생성 및 staging 서버 배포"] & Q["⑩ main 브랜치로 squash merge"]
+    E --> QA1_START(("④ DEV QA 시작"))
+    L --> QA2_START(("⑦ RELEASE QA 시작"))
+    J_dev -- 예 --> J1_dev
+    J_dev -- 아니오 --> K_dev
+    J1_dev --> K_dev
+    I["⑤ feature → release/x.x.x 로 PR"] --> J_dev
+    N["⑧ feature 지라 이슈 상태 Done 변경 및 사업부 인수 이슈에 링크 추가"] --> O["⑨ 사업부 인수 완료 후 release → main PR"]
+    O --> J_dev
+    Q --> R["⑪ main 기준 production artifact 생성 및 PlayStore/AppStore 배포"]
+    R --> S["종료"]
+    G --> A & QA_OUT_FAIL
+    QA1_START --> F
+    F -- 아니오 --> F1
+    F1 -- 예 --> G
+    F1 -- 아니오 --> H
+    H --> QA_OUT_FAIL
+    QA_OUT_FAIL --> B
+    F -- 예 --> I & N
+    QA2_START --> F
+    n1["시작"] --> A
+
+    L@{ shape: rect}
+    QA2_START@{ shape: circle}
+    O@{ shape: rect}
+    n1@{ shape: rect}
+
+    subgraph pr_conflict["PR 충돌 체크"]
+        direction TB
+        J_dev{"충돌 발생?"}
+        J1_dev["feature 브랜치에서 target 브랜치 기준으로 rebase 및 충돌 해결"]
+        K_dev["target/x.x.x 로 squash merge"]
+    end
+
+    subgraph QA_PROCESS["QA 프로세스"]
+        direction TB
+        F{"QA 통과?"}
+        F1{"수정 작업량이 많은가?"}
+        G["revert"]
+        H["작은 수정"]
+    end
+
+````
